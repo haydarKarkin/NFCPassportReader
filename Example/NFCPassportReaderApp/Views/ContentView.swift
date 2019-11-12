@@ -10,6 +10,23 @@ import SwiftUI
 import Combine
 import NFCPassportReader
 
+struct ClearButton: ViewModifier {
+@Binding var text: String
+ 
+public func body(content: Content) -> some View {
+    HStack {
+        content
+        Button(action: {
+            self.text = ""
+        }) {
+            Image(systemName: "multiply.circle.fill")
+                .foregroundColor(.secondary)
+        }
+    }
+}
+}
+
+
 // A View that just uses the UIColor systemBackground allowing
 // For light.dark mode support - willo be removed once this makes its way into SwiftUI properly
 struct BackgroundView : UIViewRepresentable {
@@ -25,18 +42,40 @@ struct BackgroundView : UIViewRepresentable {
     }
 }
 
+// This hopefully will display a textfield with a clear button - doesn't quite work yet though but left here in the hope it will soon!
+/*
+struct ClearTextView: View {
+    var placeHolder: String
+    @Binding var text: String
 
+    var body: some View {
+        ZStack {
+            HStack {
+                TextField(placeHolder, text:$text)
+                if !text.isEmpty {
+                    Button(action: {
+                        self.text = ""
+                    }) {
+                        Image(systemName: "multiply.circle")
+                    }
+                }
+            }
+        }
+    }
+}
+*/
 
 struct ContentView : View {
-    @EnvironmentObject var passportDetails: PassportDetails
+    @State var passportDetails = PassportDetails()
 
     @State private var showingAlert = false
     @State private var showDetails = false
     @State private var alertTitle : String = ""
     @State private var alertMessage : String = ""
-    
+    @State var page = 0
+
     private let passportReader = PassportReader()
-    
+
     var body: some View {
         ZStack {
             VStack {
@@ -45,29 +84,36 @@ struct ContentView : View {
                     .font(.title)
                     .padding(0)
 
+                // Will switch over to this when SwiftUI Actually updates the screen - the underlying binding IS updated but its not reflected on display
+                // as of Version 11.2.1 (11B53)/iOS 13.3 Beta 1
+//                ClearTextView(placeHolder: "Passport number", text: $passportDetails.passportNumber)
+//                .textContentType(.name)
+//                .foregroundColor(Color.primary)
+//                .textFieldStyle(RoundedBorderTextFieldStyle())
+//                .padding([.leading, .trailing])
                 TextField("Passport number",
-                          text: $passportDetails.passportNumber)
+                          text: $passportDetails.passportNumber, onEditingChanged: { (editing) in
+                          if editing {
+                            self.$passportDetails.passportNumber.wrappedValue = ""
+                            }
+                    })
                     .textContentType(.name)
-                    .foregroundColor(Color.secondary)
+                    .foregroundColor(Color.primary)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding([.leading, .trailing])
                 
-                TextField("Date of birth",
+                TextField("Date of birth (YYMMDD)",
                           text: $passportDetails.dateOfBirth)
-                    .foregroundColor(Color.secondary)
+                    .foregroundColor(Color.primary)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding([.leading, .trailing])
                 
-                TextField("Passport expiry date",
+                TextField("Passport expiry date (YYMMDD)",
                           text: $passportDetails.expiryDate)
-                    .foregroundColor(Color.secondary)
+                    .foregroundColor(Color.primary)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding([.leading, .trailing])
 
-                Spacer()
-            }.padding( .top )
-            VStack {
-                Spacer()
                 
                 Button(action: {
                     self.scanPassport()
@@ -77,16 +123,22 @@ struct ContentView : View {
                     .foregroundColor(passportDetails.isValid ? .secondary : Color.secondary.opacity(0.25))
                     }
                     .disabled( !passportDetails.isValid )
+                Picker(selection: $page, label: Text("View?")) {
+                    Text("Passport").tag(0)
+                    Text("Details").tag(1)
+                }.pickerStyle(SegmentedPickerStyle())
+                    .padding(.bottom,20)
+                
+                if page == 0 && showDetails {
+                    PassportView(passportDetails:$passportDetails)
+                        .frame(width: UIScreen.main.bounds.width-20, height: 220)
+                } else if page == 1 && showDetails {
+                    DetailsView(passportDetails:$passportDetails)
+                }
                 Spacer()
             }
             
-            PassportView( passport: self.passportDetails.passport )
-                .frame(width: UIScreen.main.bounds.width-20, height: 220)
-                .offset(y: showDetails ? 0 : UIScreen.main.bounds.height + 100)
-                .animation(.easeInOut(duration: 0.3))
-                .onTapGesture {
-                    self.showDetails.toggle()
-                }
+
         }.alert(isPresented: $showingAlert) {
                 Alert(title: Text(alertTitle), message:
                     Text(alertMessage), dismissButton: .default(Text("Got it!")))
@@ -97,25 +149,30 @@ struct ContentView : View {
 
 extension ContentView {
     func scanPassport( ) {
+        self.showDetails = false
         let mrzKey = self.passportDetails.getMRZKey()
 
+        // Set the masterListURL on the Passport Reader to allow auto passport verification
+        let masterListURL = Bundle.main.url(forResource: "masterList", withExtension: ".pem")!
+        passportReader.setMasterListURL( masterListURL )
+
+        // If we want to read only specific data groups we can using:
+//        let dataGroups : [DataGroupId] = [.COM, .SOD, .DG1, .DG2, .DG3 ]
+//        passportReader.readPassport(mrzKey: mrzKey, tags:dataGroups, completed: { (passport, error) in
         
-        let dataGroups : [DataGroupId] = [.COM, .DG1, .DG2, .SOD]
-        passportReader.readPassport(mrzKey: mrzKey, tags: dataGroups, completed: { (passport, error) in
+        passportReader.readPassport(mrzKey: mrzKey, completed: { (passport, error) in
             if let passport = passport {
                 // All good, we got a passport
-                let passportModel = Passport( fromNFCPassportModel: passport)
 
                 DispatchQueue.main.async {
-                    self.passportDetails.passport = passportModel
-                    self.showDetails.toggle()
+                    self.passportDetails.passport = passport
+                    self.showDetails = true
                 }
 
             } else {
                 self.alertTitle = "Oops"
                 self.alertTitle = "\(error?.localizedDescription ?? "Unknown error")"
                 self.showingAlert = true
-
             }
         })
 
@@ -126,14 +183,15 @@ extension ContentView {
 struct ContentView_Previews : PreviewProvider {
 
     static var previews: some View {
-        let pptData = "P<GBRTEST<<TEST<TEST<<<<<<<<<<<<<<<<<<<<<<<<1234567891GBR8001019M2106308<<<<<<<<<<<<<<04"
-        let passport = Passport( passportMRZData: pptData, image:UIImage(named: "head")!, signed: true, dataValid: true )
+//        let pptData = "P<GBRTEST<<TEST<TEST<<<<<<<<<<<<<<<<<<<<<<<<1234567891GBR8001019M2106308<<<<<<<<<<<<<<04"
+        let passport = NFCPassportModel()
         let pd = PassportDetails()
         pd.passport = passport
         
+        
         return Group {
-            ContentView().environment( \.colorScheme, .light).environmentObject(pd)
-            ContentView().environment( \.colorScheme, .dark).environmentObject(pd)
+            ContentView(passportDetails: pd).environment( \.colorScheme, .light).environmentObject(pd)
+            ContentView(passportDetails: pd).environment( \.colorScheme, .dark).environmentObject(pd)
         }
     }
 }

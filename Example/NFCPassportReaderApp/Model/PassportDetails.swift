@@ -8,26 +8,16 @@
 
 import SwiftUI
 import Combine
-
-
+import NFCPassportReader
 
 class PassportDetails : ObservableObject {
-    var willChange = PassthroughSubject<Void, Never>()
-    
-    var passportNumber : String = UserDefaults.standard.string(forKey:"passportNumber" ) ?? "" { didSet { update() } }
-    var dateOfBirth: String = UserDefaults.standard.string(forKey:"dateOfBirth" ) ?? "" { didSet { update() } }
-    var expiryDate: String = UserDefaults.standard.string(forKey:"expiryDate" ) ?? "" { didSet { update() } }
-    
-    var passport : Passport? {
-        willSet { update() }
-    }
+    @Published var passportNumber : String = UserDefaults.standard.string(forKey:"passportNumber" ) ?? ""
+    @Published var dateOfBirth: String = UserDefaults.standard.string(forKey:"dateOfBirth" ) ?? ""
+    @Published var expiryDate: String = UserDefaults.standard.string(forKey:"expiryDate" ) ?? ""
+    @Published var passport : NFCPassportModel?
     
     var isValid : Bool {
         return passportNumber.count >= 8 && dateOfBirth.count == 6 && expiryDate.count == 6
-    }
-    
-    func update() {
-        willChange.send(())
     }
     
     func getMRZKey() -> String {
